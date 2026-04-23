@@ -1,36 +1,35 @@
-# Requirements
+# 需求分析
 
-## Background
+## 项目背景
 
-Log Anomaly Monitor is a course project for a distributed log collection,
-analysis, anomaly detection, and real-time visualization system. The system uses
-a message-oriented middleware queue to decouple log producers from analysis and
-monitoring services.
+本项目是一个分布式日志采集、异常检测和实时监控系统。实验要求使用 MOM 消息队列技术，将日志采集、日志分析和实时展示解耦。为了便于本地实验，项目中使用多个 Python 进程模拟日志采集节点，使用 RabbitMQ 作为消息队列，使用 FastAPI 提供监控页面和接口。
 
-## Goals
+系统主要处理设备运行日志。每条日志包含设备编号、时间戳、日志级别和日志内容。分析服务需要按照不同 `device_id` 分别维护日志统计结果，计算 WARN/ERROR 占比，并在 ERROR 占比过高时生成严重告警。
 
-- Simulate multiple distributed log collection nodes.
-- Publish structured log events to a message queue.
-- Analyze logs independently for each `device_id`.
-- Maintain the latest `N` logs for each device.
-- Calculate WARN and ERROR ratios.
-- Track the latest ERROR event and timestamp.
-- Publish periodic analysis results every configurable `T` seconds.
-- Publish severe alerts when ERROR ratio exceeds a configurable threshold within
-  the latest configurable `S` seconds.
-- Display device status and trends in a real-time web dashboard.
+## 总体目标
 
-## Non-Goals
+- 模拟多个日志采集节点。
+- 每个采集节点按固定间隔生成日志消息。
+- 通过消息队列传递日志，避免采集端和分析端直接耦合。
+- 按设备编号独立分析日志。
+- 维护每台设备最近 `N` 条日志记录。
+- 计算 WARN 和 ERROR 日志占比。
+- 记录设备最近一次 ERROR 事件及其时间。
+- 每隔 `T` 秒发布一次分析结果。
+- 当最近 `S` 秒内 ERROR 占比超过阈值时，生成严重告警。
+- 将分析结果和告警信息实时展示在 Web 页面上。
 
-- User authentication and authorization.
-- Production-grade observability infrastructure.
-- Real device integration.
-- Kubernetes deployment.
-- Complex machine learning anomaly detection.
+## 功能需求
 
-## Log Event Format
+### 1. 日志采集
 
-Each collector publishes JSON messages in the following shape:
+- 系统支持多个日志采集节点，实验中通过多个进程模拟。
+- 每个采集节点都有唯一的节点编号，例如 `collector-01`。
+- 每个采集节点模拟多台设备的日志。
+- 默认每 100ms 生成一条日志消息。
+- 采集到的日志发布到 RabbitMQ 的原始日志队列。
+
+日志格式如下：
 
 ```json
 {
@@ -41,73 +40,76 @@ Each collector publishes JSON messages in the following shape:
 }
 ```
 
-Allowed `log_level` values:
+其中 `log_level` 包含三种取值：
 
 - `INFO`
 - `WARN`
 - `ERROR`
 
-## Functional Requirements
+### 2. 日志分析
 
-### Log Collection
+- 分析服务订阅所有原始日志消息。
+- 对不同 `device_id` 分别维护独立状态。
+- 每台设备保留最近 `N` 条日志记录。
+- 根据最近 `N` 条日志计算：
+  - ERROR 占比。
+  - WARN 占比。
+  - 最近一次 ERROR 事件。
+  - 最近一次 ERROR 时间戳。
+- 每隔 `T` 秒将分析结果打包成新消息，发布到分析结果队列。
 
-- The system shall support multiple simulated collection nodes.
-- Each node shall have a unique node identifier.
-- Each node shall simulate logs from one or more devices.
-- Each node shall generate one log event every 100 ms by default.
-- Each log event shall be published to the raw log queue.
+### 3. 严重告警
 
-### Log Analysis
+- 分析服务检查最近 `S` 秒内的日志。
+- 如果这段时间内 ERROR 占比超过 50%，生成严重告警。
+- 告警消息发布到告警队列。
+- 告警按设备单独统计，某台设备异常不会影响其他设备。
+- 为避免告警刷屏，同一设备从正常状态进入严重状态时才发送新的告警。
 
-- The analyzer shall subscribe to all raw log events.
-- The analyzer shall maintain an independent sliding window for each device.
-- The sliding window size shall be configurable as `N`.
-- The analyzer shall calculate:
-  - ERROR ratio in the latest `N` records.
-  - WARN ratio in the latest `N` records.
-  - Latest ERROR event.
-  - Latest ERROR timestamp.
-- The analyzer shall publish analysis results every configurable `T` seconds.
+### 4. 实时可视化
 
-### Severe Alert Detection
+Web 监控服务需要提供以下信息：
 
-- The analyzer shall inspect logs in the latest configurable `S` seconds.
-- If ERROR ratio in that time window is greater than the threshold, the analyzer
-  shall publish a severe alert.
-- The default threshold shall be `50%`.
-- Alerts shall be tracked per device.
+- 当前设备列表。
+- 各设备 WARN 占比。
+- 各设备 ERROR 占比。
+- 最近一次 ERROR 事件和时间。
+- 严重告警状态。
+- 严重告警次数。
+- 一段时间内 WARN/ERROR 数量变化趋势折线图。
 
-### Real-Time Monitoring
+前端页面通过 WebSocket 接收实时分析结果，并使用 ECharts 绘制趋势图。
 
-- The web service shall provide a dashboard for current device status.
-- The dashboard shall show WARN and ERROR ratios for each device.
-- The dashboard shall show the latest ERROR message and timestamp.
-- The dashboard shall show severe alert status and alert count.
-- The dashboard shall show WARN and ERROR trend lines over time.
-- The dashboard shall update in real time through WebSocket.
+## 配置需求
 
-## Configuration
+以下参数应支持配置：
 
-The following settings should be configurable through environment variables:
-
-| Name | Default | Description |
+| 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ connection URL |
-| `RAW_LOG_QUEUE` | `logs.raw` | Raw log queue name |
-| `ANALYSIS_QUEUE` | `logs.analysis` | Analysis result queue name |
-| `ALERT_QUEUE` | `logs.alerts` | Alert queue name |
-| `WINDOW_SIZE` | `100` | Latest log count per device |
-| `ANALYSIS_INTERVAL_SECONDS` | `3` | Analysis publishing interval |
-| `ALERT_WINDOW_SECONDS` | `10` | Severe alert detection time window |
-| `ERROR_RATIO_THRESHOLD` | `0.5` | Severe alert ERROR ratio threshold |
-| `SQLITE_PATH` | `data/log_monitor.db` | SQLite database path |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ 连接地址 |
+| `RAW_LOG_QUEUE` | `logs.raw` | 原始日志队列 |
+| `ANALYSIS_QUEUE` | `logs.analysis` | 分析结果队列 |
+| `ALERT_QUEUE` | `logs.alerts` | 严重告警队列 |
+| `WINDOW_SIZE` | `100` | 每台设备最近日志窗口大小 |
+| `ANALYSIS_INTERVAL_SECONDS` | `3` | 分析结果发布间隔 |
+| `ALERT_WINDOW_SECONDS` | `10` | 严重告警检测窗口 |
+| `ERROR_RATIO_THRESHOLD` | `0.5` | ERROR 占比告警阈值 |
+| `SQLITE_PATH` | `data/log_monitor.db` | SQLite 数据库路径 |
 
-## Quality Requirements
+## 非功能需求
 
-- The project should be easy to run locally.
-- The message queue should be started with Docker Compose.
-- The code should keep business logic testable without requiring RabbitMQ.
-- The README should explain architecture, startup commands, and message format.
-- The implementation should avoid over-engineering while keeping clear module
-  boundaries.
+- 项目应能在本地较容易运行。
+- RabbitMQ 通过 Docker Compose 启动，减少环境配置成本。
+- 核心异常检测逻辑需要能单独测试。
+- 项目结构应清晰，采集、分析、展示和公共模块分开。
+- 文档中需要说明启动步骤、消息格式和系统结构。
 
+## 本项目不包含的内容
+
+为了控制实验规模，以下内容暂不实现：
+
+- 用户登录和权限管理。
+- 接入真实设备。
+- 复杂机器学习异常检测。
+- Kubernetes 部署。
+- 大规模日志检索系统。

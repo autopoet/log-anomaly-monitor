@@ -1,23 +1,24 @@
-# Log Anomaly Monitor
+# 分布式日志异常检测与监控系统
 
-Log Anomaly Monitor is a lightweight distributed log collection, anomaly
-detection, and real-time monitoring project. It is designed for a course
-experiment, but the codebase is structured like a small open-source project.
+这是一个基于 RabbitMQ 的分布式日志采集、异常分析和实时可视化小项目，主要用于完成课程第二次作业。项目通过多个模拟采集节点生成设备日志，再由分析服务按设备维度统计 WARN/ERROR 占比，并在前端页面中实时展示设备状态和告警信息。
 
-## Features
+项目没有做得特别复杂，重点放在消息队列解耦、按设备独立分析、异常检测和实时展示这几部分，方便本地运行和课程演示。
 
-- Simulates multiple distributed log collection nodes.
-- Publishes JSON log events to RabbitMQ.
-- Analyzes logs independently for each `device_id`.
-- Maintains the latest `N` log records per device.
-- Calculates WARN and ERROR ratios.
-- Records the latest ERROR event and timestamp.
-- Publishes periodic analysis results to a message queue.
-- Emits severe alerts when recent ERROR ratio exceeds the threshold.
-- Stores raw logs, analysis snapshots, and alerts in SQLite.
-- Displays device status and WARN/ERROR trends in a real-time dashboard.
+## 功能说明
 
-## Tech Stack
+- 使用多个进程模拟分布式日志采集节点。
+- 每个采集节点可以指定自己的节点编号。
+- 采集节点默认每 100ms 生成一条日志消息。
+- 日志消息通过 RabbitMQ 发布到原始日志队列。
+- 分析服务订阅原始日志队列，并按 `device_id` 独立维护最近 `N` 条日志。
+- 统计每台设备最近日志中的 WARN 占比和 ERROR 占比。
+- 记录每台设备最近一次 ERROR 事件及其时间。
+- 每隔 `T` 秒将分析结果发布到分析结果队列。
+- 如果最近 `S` 秒内 ERROR 占比超过 50%，生成严重告警消息。
+- 使用 SQLite 保存原始日志、分析结果和告警记录。
+- 使用 FastAPI + WebSocket + ECharts 实现实时监控页面。
+
+## 技术栈
 
 - Python 3.11+
 - RabbitMQ
@@ -27,19 +28,21 @@ experiment, but the codebase is structured like a small open-source project.
 - ECharts
 - Pytest
 
-## Architecture
+## 系统结构
 
 ```text
-collectors -> RabbitMQ logs.raw -> analyzer -> RabbitMQ logs.analysis
-                                      |       -> RabbitMQ logs.alerts
+日志采集节点 -> RabbitMQ logs.raw -> 日志分析服务 -> RabbitMQ logs.analysis
+                                      |            -> RabbitMQ logs.alerts
                                       v
                                    SQLite
                                       ^
                                       |
-                                 FastAPI + WebSocket -> Dashboard
+                               FastAPI + WebSocket -> 实时监控页面
 ```
 
-## Message Format
+## 日志消息格式
+
+日志采集节点生成的消息为 JSON 格式，示例如下：
 
 ```json
 {
@@ -50,119 +53,139 @@ collectors -> RabbitMQ logs.raw -> analyzer -> RabbitMQ logs.analysis
 }
 ```
 
-Allowed `log_level` values are `INFO`, `WARN`, and `ERROR`.
+其中 `log_level` 取值为：
 
-## Quick Start
+- `INFO`
+- `WARN`
+- `ERROR`
 
-Install dependencies:
+## 快速启动
+
+先进入项目目录：
+
+```bash
+cd log-anomaly-monitor
+```
+
+安装依赖：
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Start RabbitMQ:
+启动 RabbitMQ：
 
 ```bash
 docker compose up -d
 ```
 
-RabbitMQ management UI:
+RabbitMQ 管理页面：
 
 ```text
 http://localhost:15672
 guest / guest
 ```
 
-Initialize and run the analyzer:
+启动日志分析服务：
 
 ```bash
 python -m analyzer.consumer
 ```
 
-Start one or more collectors in separate terminals:
+启动日志采集节点，建议另开一个终端：
 
 ```bash
 python -m collector.producer --node-id collector-01
+```
+
+如果想模拟多个采集节点，可以再开一个终端：
+
+```bash
 python -m collector.producer --node-id collector-02
 ```
 
-Start the web dashboard:
+启动 Web 监控服务：
 
 ```bash
 python -m uvicorn web.main:app --reload
 ```
 
-Open:
+浏览器打开：
 
 ```text
 http://localhost:8000
 ```
 
-## Configuration
+页面中可以看到设备数量、严重告警数量、各设备 WARN/ERROR 占比、最近一次 ERROR 事件以及 WARN/ERROR 趋势折线图。
 
-Copy `.env.example` if you want to manage local settings explicitly. The project
-reads these environment variables directly:
+## 配置项
 
-| Name | Default | Description |
+项目通过环境变量读取配置。默认配置已经可以直接运行，也可以参考 `.env.example` 修改。
+
+| 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ connection URL |
-| `RAW_LOG_QUEUE` | `logs.raw` | Raw log queue name |
-| `ANALYSIS_QUEUE` | `logs.analysis` | Analysis result queue name |
-| `ALERT_QUEUE` | `logs.alerts` | Severe alert queue name |
-| `WINDOW_SIZE` | `100` | Latest log count per device |
-| `ANALYSIS_INTERVAL_SECONDS` | `3` | Analysis publish interval |
-| `ALERT_WINDOW_SECONDS` | `10` | Severe alert detection window |
-| `ERROR_RATIO_THRESHOLD` | `0.5` | Severe alert threshold |
-| `SQLITE_PATH` | `data/log_monitor.db` | SQLite database path |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ 连接地址 |
+| `RAW_LOG_QUEUE` | `logs.raw` | 原始日志队列 |
+| `ANALYSIS_QUEUE` | `logs.analysis` | 分析结果队列 |
+| `ALERT_QUEUE` | `logs.alerts` | 告警队列 |
+| `WINDOW_SIZE` | `100` | 每个设备保留的最近日志条数 |
+| `ANALYSIS_INTERVAL_SECONDS` | `3` | 分析结果发布间隔 |
+| `ALERT_WINDOW_SECONDS` | `10` | 严重告警检测时间窗口 |
+| `ERROR_RATIO_THRESHOLD` | `0.5` | ERROR 占比告警阈值 |
+| `SQLITE_PATH` | `data/log_monitor.db` | SQLite 数据库路径 |
 
-## Project Structure
+## 目录结构
 
 ```text
 analyzer/
-  consumer.py      # RabbitMQ consumer and periodic result publisher
-  detector.py      # Sliding-window statistics and alert detection
+  consumer.py      # 消费原始日志并发布分析结果
+  detector.py      # 滑动窗口统计和异常检测逻辑
 collector/
-  producer.py      # Simulated distributed log collector
+  producer.py      # 模拟日志采集节点
 common/
-  config.py        # Environment-based settings
-  models.py        # Shared Pydantic models
-  mq.py            # RabbitMQ helpers
-  storage.py       # SQLite persistence and queries
+  config.py        # 配置读取
+  models.py        # 共享数据模型
+  mq.py            # RabbitMQ 操作封装
+  storage.py       # SQLite 存储和查询
 docs/
-  requirements.md
-  design.md
+  requirements.md  # 需求分析
+  design.md        # 系统设计
 web/
-  main.py          # FastAPI app and WebSocket broadcast
-  static/          # Dashboard assets
+  main.py          # FastAPI 服务和 WebSocket 推送
+  static/          # 前端页面资源
 tests/
-  test_detector.py
+  test_detector.py # 异常检测逻辑测试
 ```
 
-## Tests
+## 测试
+
+运行单元测试：
 
 ```bash
 python -m pytest
 ```
 
-The current tests focus on the core detector logic:
+当前测试主要覆盖：
 
-- WARN/ERROR ratio calculation.
-- Latest ERROR tracking.
-- Sliding window size.
-- Per-device isolation.
-- Severe alert transition behavior.
+- WARN/ERROR 占比计算。
+- 最近一次 ERROR 记录。
+- 最近 `N` 条日志窗口维护。
+- 不同设备之间的状态隔离。
+- 严重告警只在状态切换时触发，避免重复刷屏。
 
-## Course Report Materials
+## 作业文档
 
-The documentation in `docs/` can be used as the basis for the experiment report:
+`docs/` 目录中包含本项目的需求分析和系统设计说明：
 
-- `docs/requirements.md`: requirement analysis.
-- `docs/design.md`: system architecture and module design.
+- `docs/requirements.md`
+- `docs/design.md`
 
-## Future Improvements
+这两份文档可以作为实验报告的基础材料。
 
-- Add HTTP log ingestion for external devices.
-- Add webhook or email alert notifications.
-- Export Prometheus metrics.
-- Add device grouping and filtering.
-- Add Dockerfiles for all Python services.
+## 后续可以改进的地方
+
+- 接入真实日志文件或 HTTP 日志上报接口。
+- 增加邮件、Webhook 等告警通知方式。
+- 增加设备分组和筛选功能。
+- 给采集器、分析器和 Web 服务分别补充 Dockerfile。
+- 增加更多异常检测规则，例如连续 ERROR 次数、WARN 突增等。
