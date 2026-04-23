@@ -73,18 +73,43 @@ cd log-anomaly-monitor
 python -m pip install -r requirements.txt
 ```
 
-启动 RabbitMQ：
+### 方式一：Docker 一键启动完整系统
+
+如果电脑已经安装 Docker Desktop，可以直接启动完整系统：
 
 ```bash
-docker compose up -d
+docker compose up --build
 ```
 
-RabbitMQ 管理页面：
+启动后访问监控页面：
+
+```text
+http://localhost:8000
+```
+
+RabbitMQ 管理页面为：
 
 ```text
 http://localhost:15672
 guest / guest
 ```
+
+这个方式会同时启动：
+
+- RabbitMQ
+- 日志分析服务
+- 日志采集节点
+- Web 监控服务
+
+### 方式二：手动启动完整实验链路
+
+如果只想先启动 RabbitMQ，可以执行：
+
+```bash
+docker compose up -d rabbitmq
+```
+
+然后分别打开多个终端启动下面几个服务。
 
 启动日志分析服务：
 
@@ -118,6 +143,22 @@ http://localhost:8000
 
 页面中可以看到设备数量、严重告警数量、各设备 WARN/ERROR 占比、最近一次 ERROR 事件以及 WARN/ERROR 趋势折线图。
 
+### 方式三：可视化预览模式
+
+如果电脑没有 Docker，也没有安装 RabbitMQ，可以使用预览模式先查看页面效果：
+
+```bash
+python -m uvicorn web.preview:app --reload
+```
+
+然后打开：
+
+```text
+http://localhost:8000
+```
+
+预览模式会在 Web 服务内部生成模拟分析数据，并通过 WebSocket 推送到页面。它只用于快速查看可视化效果和截图，不替代 RabbitMQ 完整实验链路。真正的消息队列功能仍然需要使用方式一或方式二运行。
+
 ## 配置项
 
 项目通过环境变量读取配置。默认配置已经可以直接运行，也可以参考 `.env.example` 修改。
@@ -137,6 +178,8 @@ http://localhost:8000
 ## 目录结构
 
 ```text
+Dockerfile
+docker-compose.yml
 analyzer/
   consumer.py      # 消费原始日志并发布分析结果
   detector.py      # 滑动窗口统计和异常检测逻辑
@@ -152,6 +195,7 @@ docs/
   design.md        # 系统设计
 web/
   main.py          # FastAPI 服务和 WebSocket 推送
+  preview.py       # 无 RabbitMQ 的可视化预览入口
   static/          # 前端页面资源
 tests/
   test_detector.py # 异常检测逻辑测试

@@ -14,3 +14,48 @@ services:
       timeout: 5s
       retries: 5
 
+  analyzer:
+    build: .
+    container_name: log-anomaly-analyzer
+    command: python -m analyzer.consumer
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      SQLITE_PATH: data/log_monitor.db
+    volumes:
+      - log_data:/app/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  collector:
+    build: .
+    container_name: log-anomaly-collector
+    command: python -m collector.producer --node-id collector-docker-01
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: log-anomaly-web
+    command: python -m uvicorn web.main:app --host 0.0.0.0 --port 8000
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      SQLITE_PATH: data/log_monitor.db
+    volumes:
+      - log_data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      analyzer:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  log_data:
