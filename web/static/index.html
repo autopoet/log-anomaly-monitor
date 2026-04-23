@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log Anomaly Monitor</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Distributed Log Analysis</p>
+          <h1>Log Anomaly Monitor</h1>
+        </div>
+        <div class="status">
+          <span id="ws-dot" class="dot"></span>
+          <span id="ws-label">Connecting</span>
+        </div>
+      </header>
+
+      <section class="overview" aria-label="system overview">
+        <div class="metric">
+          <span>Devices</span>
+          <strong id="device-count">0</strong>
+        </div>
+        <div class="metric">
+          <span>Severe</span>
+          <strong id="severe-count">0</strong>
+        </div>
+        <div class="metric">
+          <span>Alerts</span>
+          <strong id="alert-count">0</strong>
+        </div>
+      </section>
+
+      <section class="layout">
+        <div class="device-panel">
+          <div class="section-head">
+            <h2>Devices</h2>
+            <span id="last-update">No data</span>
+          </div>
+          <div id="device-grid" class="device-grid"></div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="section-head">
+            <h2>Trend</h2>
+            <select id="device-select" aria-label="select device"></select>
+          </div>
+          <div id="trend-chart" class="chart"></div>
+
+          <div class="section-head alerts-head">
+            <h2>Recent Alerts</h2>
+          </div>
+          <div id="alerts" class="alerts"></div>
+        </aside>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
